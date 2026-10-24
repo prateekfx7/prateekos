@@ -96,7 +96,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
             <input
               type="text"
               autoFocus
-              placeholder="Client Name or Brand (e.g. Alex Thorne / SaaS Startup)"
+              placeholder="Client Name or Brand (e.g. Acme Studio / Creator)"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               className="bg-white border border-black/[0.08] rounded-xl px-3 py-2 text-xs text-[#1D1D1F]"

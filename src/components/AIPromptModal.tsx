@@ -39,16 +39,16 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
 
   const examplePrompts = [
     {
-      label: 'Full Day Multi-Pillar Sprint',
-      text: 'Today solve 2 leetcode problems on graphs in Python 3, finish rough cut promo video for Alex Thorne by 5pm, attend OS lecture CS401 at 2pm, send 10 cold DMs on Twitter to SaaS founders, drink 8 glasses of water and hit the gym at 7pm.',
+      label: 'Full Day Focus Plan',
+      text: 'Today solve Two Sum and 3Sum on LeetCode in Python, finish client motion edit by 5pm, attend Operating Systems lecture at 2pm, send 10 cold outreach DMs, drink 8 glasses of water and workout at 7pm.',
     },
     {
-      label: 'DSA + Video Client Rush',
-      text: 'Solve 1 Medium Tree BFS problem on LeetCode with Python complexity notes, then complete typography pass & review link export for SaaS client by 3pm, and hydrate 6 glasses.',
+      label: 'DSA + Client Rush',
+      text: 'Solve 1 Medium Tree problem on LeetCode with Python notes, then export video review link for client by 3pm, and hydrate 8 glasses.',
     },
     {
-      label: 'College Lecture & Outreach',
-      text: 'Attend Database Management lecture at 11am, submit SQL indexing assignment, send 5 video audit DMs on LinkedIn, and sleep 8 hours tonight.',
+      label: 'Academics & System Design',
+      text: 'Study Database Indexing at 11am, review System Design Caching concepts, send 5 audit messages on LinkedIn, and sleep 8 hours tonight.',
     },
   ];
 
@@ -173,7 +173,7 @@ export const AIPromptModal: React.FC<AIPromptModalProps> = ({
                 rows={4}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g. Today I have to solve 2 leetcode problems on graphs in Python, finish rough cut video for Alex Thorne by 5pm, attend OS lecture at 2pm, send 10 cold DMs on Twitter to SaaS founders, drink 8 glasses of water, and hit the gym at 7pm..."
+                placeholder="e.g. Today I have to solve Two Sum and 3Sum on LeetCode in Python, deliver motion edit for client by 5pm, attend OS lecture at 2pm, send 10 cold DMs on Twitter, drink 8 glasses of water, and hit the gym at 7pm..."
                 className="w-full bg-[#FAF9F5] border border-black/[0.08] rounded-2xl p-4 text-base sm:text-xs text-[#1D1D1F] placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-black resize-none leading-relaxed"
               />
             </div>

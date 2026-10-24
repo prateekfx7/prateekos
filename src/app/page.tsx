@@ -12,6 +12,8 @@ import {
   LifeTask,
   ScheduleBlock,
   TimeBlockEvent,
+  DailyRating,
+  GoogleCalendarEvent,
 } from '../types';
 import { storage } from '../lib/storage';
 import {
@@ -33,9 +35,11 @@ import { HealthRoutineView } from '../components/HealthRoutineView';
 import { QuickAddModal } from '../components/QuickAddModal';
 import { AIPromptModal } from '../components/AIPromptModal';
 import { AuthModal } from '../components/AuthModal';
+import { DailyRatingModal } from '../components/DailyRatingModal';
+import { GoogleCalendarModal } from '../components/GoogleCalendarModal';
 import { CustomIcon } from '../components/CustomIcon';
 import { AIParsedResult } from '../types';
-import { Sparkles, Plus, Clock, Cloud, RefreshCw } from 'lucide-react';
+import { Sparkles, Plus, Clock, Cloud, RefreshCw, Calendar } from 'lucide-react';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -51,6 +55,14 @@ export default function Home() {
   const [health, setHealth] = useState<HealthMetrics>(storage.getHealth());
   const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([]);
   const [timeBlockEvents, setTimeBlockEvents] = useState<TimeBlockEvent[]>([]);
+
+  // Daily Rating & Google Calendar States
+  const [ratings, setRatings] = useState<DailyRating[]>([]);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showGoogleCalendarModal, setShowGoogleCalendarModal] = useState(false);
+  const [gcalEvents, setGcalEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [todayStr, setTodayStr] = useState('');
+  const [currentDateFormatted, setCurrentDateFormatted] = useState('');
 
   // User Session & Cloud Sync
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -72,6 +84,11 @@ export default function Home() {
     setHealth(storage.getHealth());
     setScheduleBlocks(storage.getScheduleBlocks());
     setTimeBlockEvents(storage.getTimeBlockEvents());
+    setRatings(storage.getRatings());
+
+    const now = new Date();
+    setTodayStr(now.toISOString().split('T')[0]);
+    setCurrentDateFormatted(now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
     setMounted(true);
   }, []);
 
@@ -96,6 +113,10 @@ export default function Home() {
             setHealth(remote.health);
             setScheduleBlocks(remote.scheduleBlocks);
             setTimeBlockEvents(remote.timeBlockEvents);
+            if (remote.ratings) {
+              setRatings(remote.ratings);
+              storage.saveRatings(remote.ratings);
+            }
 
             storage.saveTasks(remote.tasks);
             storage.saveDSA(remote.dsaProblems);
@@ -118,6 +139,8 @@ export default function Home() {
               health: storage.getHealth(),
               scheduleBlocks: storage.getScheduleBlocks(),
               timeBlockEvents: storage.getTimeBlockEvents(),
+              ratings: storage.getRatings(),
+              googleCalendarUrl: storage.getGoogleCalendarUrl(),
             };
             await cloudSyncService.saveState(user.id, initialSync);
             setCloudSynced(true);
@@ -149,6 +172,10 @@ export default function Home() {
       setHealth(remote.health);
       setScheduleBlocks(remote.scheduleBlocks);
       setTimeBlockEvents(remote.timeBlockEvents);
+      if (remote.ratings) {
+        setRatings(remote.ratings);
+        storage.saveRatings(remote.ratings);
+      }
 
       storage.saveTasks(remote.tasks);
       storage.saveDSA(remote.dsaProblems);
@@ -180,6 +207,8 @@ export default function Home() {
       health: partial.health !== undefined ? partial.health : health,
       scheduleBlocks: partial.scheduleBlocks !== undefined ? partial.scheduleBlocks : scheduleBlocks,
       timeBlockEvents: partial.timeBlockEvents !== undefined ? partial.timeBlockEvents : timeBlockEvents,
+      ratings: partial.ratings !== undefined ? partial.ratings : ratings,
+      googleCalendarUrl: partial.googleCalendarUrl !== undefined ? partial.googleCalendarUrl : storage.getGoogleCalendarUrl(),
     };
     cloudSyncService.saveState(currentUser.id, fullState);
   };
@@ -195,6 +224,8 @@ export default function Home() {
     setHealth(storage.getHealth());
     setScheduleBlocks([]);
     setTimeBlockEvents([]);
+    setRatings([]);
+    setGcalEvents([]);
 
     if (currentUser) {
       cloudSyncService.saveState(currentUser.id, {
@@ -207,6 +238,8 @@ export default function Home() {
         health: storage.getHealth(),
         scheduleBlocks: [],
         timeBlockEvents: [],
+        ratings: [],
+        googleCalendarUrl: '',
       });
     }
   };
@@ -274,7 +307,15 @@ export default function Home() {
 
   // Handlers for Universal Tasks
   const handleToggleTask = (taskId: string) => {
-    const updated = tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+    const updated = tasks.map((t) =>
+      t.id === taskId
+        ? {
+            ...t,
+            done: !t.done,
+            completedAt: !t.done ? new Date().toISOString() : undefined,
+          }
+        : t
+    );
     updateTasks(updated);
   };
 
@@ -285,6 +326,21 @@ export default function Home() {
       createdAt: new Date().toISOString(),
     };
     updateTasks([created, ...tasks]);
+  };
+
+  // Handlers for Daily Rating
+  const handleSaveRating = (newRating: DailyRating) => {
+    const updated = [newRating, ...ratings.filter((r) => r.date !== newRating.date)];
+    setRatings(updated);
+    storage.saveRatings(updated);
+    syncToCloud({ ratings: updated });
+  };
+
+  // Handlers for Google Calendar
+  const handleSyncGoogleCalendar = (events: GoogleCalendarEvent[], url: string) => {
+    setGcalEvents(events);
+    storage.saveGoogleCalendarUrl(url);
+    syncToCloud({ googleCalendarUrl: url });
   };
 
   // Handlers for DSA
@@ -425,22 +481,30 @@ export default function Home() {
     syncToCloud({ timeBlockEvents: updated });
   };
 
-  // AI 1-Click Multi-Pillar Distribution Handler
+  // AI 1-Click Multi-Pillar Distribution Handler (Atomic & Free of Mock Data)
   const handleApplyAIParsedResult = (parsed: AIParsedResult) => {
-    // 1. DSA Problems
-    if (parsed.dsaProblems.length > 0) {
+    let nextTasks = [...tasks];
+    let nextDSA = [...dsaProblems];
+    let nextClients = [...clients];
+    let nextCollege = [...collegeSubjects];
+    let nextOutreach = [...outreachLeads];
+    let nextInterview = [...interviewTopics];
+    let nextHealth = { ...health };
+    let nextScheduleBlocks = [...scheduleBlocks];
+
+    // 1. DSA Problems with automatic LeetCode URLs
+    if (parsed.dsaProblems && parsed.dsaProblems.length > 0) {
       const newDSA: DSAProblem[] = parsed.dsaProblems.map((p, i) => ({
         ...p,
         id: `dsa-${Date.now()}-${i}`,
       }));
-      updateDSA([...newDSA, ...dsaProblems]);
+      nextDSA = [...newDSA, ...nextDSA];
     }
 
-    // 2. Client Tasks & Deliverables
-    if (parsed.clientTasks.length > 0) {
-      const newClients = [...clients];
+    // 2. Client Tasks & Deliverables (Preserves exact user text, zero fabricated retainers)
+    if (parsed.clientTasks && parsed.clientTasks.length > 0) {
       parsed.clientTasks.forEach((c, idx) => {
-        const existing = newClients.find((cli) => cli.clientName.toLowerCase() === c.clientName.toLowerCase());
+        const existing = nextClients.find((cli) => cli.clientName.toLowerCase() === c.clientName.toLowerCase());
         if (existing) {
           existing.tasks.push({
             id: `task-${Date.now()}-${idx}`,
@@ -449,26 +513,26 @@ export default function Home() {
           });
           if (c.deadline) existing.deadline = c.deadline;
         } else {
-          newClients.unshift({
+          nextClients.unshift({
             id: `client-${Date.now()}-${idx}`,
             clientName: c.clientName,
-            projectTitle: c.projectTitle || 'Video Deliverable',
-            dealValue: c.dealValue || '$1,500',
+            projectTitle: c.projectTitle || 'Deliverable',
+            dealValue: c.dealValue || '',
             stage: 'Ingest & Rough Cut',
-            deadline: c.deadline || 'Today 5:00 PM',
-            tasks: [{ id: `t-${Date.now()}`, text: c.taskText, done: false }],
+            deadline: c.deadline || 'Pending',
+            tasks: [{ id: `t-${Date.now()}-${idx}`, text: c.taskText, done: false }],
           });
         }
       });
-      updateClients(newClients);
     }
 
     // 3. College Academics
-    if (parsed.collegeTasks.length > 0) {
-      const newCollege = [...collegeSubjects];
+    if (parsed.collegeTasks && parsed.collegeTasks.length > 0) {
       parsed.collegeTasks.forEach((col) => {
-        const existing = newCollege.find(
-          (sub) => sub.name.toLowerCase().includes(col.subjectName.toLowerCase()) || sub.code.toLowerCase() === col.subjectCode.toLowerCase()
+        const existing = nextCollege.find(
+          (sub) =>
+            sub.name.toLowerCase().includes(col.subjectName.toLowerCase()) ||
+            (col.subjectCode && sub.code.toLowerCase() === col.subjectCode.toLowerCase())
         );
         if (existing) {
           if (col.attended) {
@@ -480,57 +544,95 @@ export default function Home() {
           }
         }
       });
-      updateCollege(newCollege);
     }
 
     // 4. Outreach CRM Leads
-    if (parsed.outreachLeads.length > 0) {
+    if (parsed.outreachLeads && parsed.outreachLeads.length > 0) {
       const newLeads: OutreachLead[] = parsed.outreachLeads.map((l, i) => ({
         ...l,
         id: `lead-${Date.now()}-${i}`,
       }));
-      updateOutreach([...newLeads, ...outreachLeads]);
+      nextOutreach = [...newLeads, ...nextOutreach];
     }
 
     // 5. Interview Prep Topics
-    if (parsed.interviewTopics.length > 0) {
+    if (parsed.interviewTopics && parsed.interviewTopics.length > 0) {
       const newTopics: InterviewTopic[] = parsed.interviewTopics.map((t, i) => ({
         ...t,
         id: `topic-${Date.now()}-${i}`,
       }));
-      updateInterview([...newTopics, ...interviewTopics]);
+      nextInterview = [...newTopics, ...nextInterview];
     }
 
     // 6. Health & Routine
     if (parsed.healthMetrics) {
-      const updatedHealth: HealthMetrics = {
-        ...health,
+      nextHealth = {
+        ...nextHealth,
         ...(parsed.healthMetrics.waterGlasses !== undefined ? { waterGlasses: parsed.healthMetrics.waterGlasses } : {}),
         ...(parsed.healthMetrics.sleepHours !== undefined ? { sleepHours: parsed.healthMetrics.sleepHours } : {}),
         ...(parsed.healthMetrics.workoutDone !== undefined ? { workoutDone: parsed.healthMetrics.workoutDone } : {}),
       };
-      updateHealth(updatedHealth);
     }
 
-    // 7. Timeline Blocks (Image 2)
-    if (parsed.timelineBlocks.length > 0) {
+    // 7. Timeline Blocks
+    if (parsed.timelineBlocks && parsed.timelineBlocks.length > 0) {
       const newBlocks: ScheduleBlock[] = parsed.timelineBlocks.map((b, i) => ({
         ...b,
         id: `sb-${Date.now()}-${i}`,
       }));
-      const updated = [...scheduleBlocks, ...newBlocks];
-      setScheduleBlocks(updated);
-      storage.saveScheduleBlocks(updated);
+      nextScheduleBlocks = [...nextScheduleBlocks, ...newBlocks];
     }
 
     // 8. General Priority Tasks
-    if (parsed.generalTasks.length > 0) {
+    if (parsed.generalTasks && parsed.generalTasks.length > 0) {
       const newTasks: LifeTask[] = parsed.generalTasks.map((t, i) => ({
         ...t,
         id: `task-${Date.now()}-${i}`,
         createdAt: new Date().toISOString(),
       }));
-      updateTasks([...newTasks, ...tasks]);
+      nextTasks = [...newTasks, ...nextTasks];
+    }
+
+    // Atomically commit all state & localStorage
+    setTasks(nextTasks);
+    storage.saveTasks(nextTasks);
+
+    setDSAProblems(nextDSA);
+    storage.saveDSA(nextDSA);
+
+    setClients(nextClients);
+    storage.saveClients(nextClients);
+
+    setCollegeSubjects(nextCollege);
+    storage.saveCollege(nextCollege);
+
+    setOutreachLeads(nextOutreach);
+    storage.saveOutreach(nextOutreach);
+
+    setInterviewTopics(nextInterview);
+    storage.saveInterview(nextInterview);
+
+    setHealth(nextHealth);
+    storage.saveHealth(nextHealth);
+
+    setScheduleBlocks(nextScheduleBlocks);
+    storage.saveScheduleBlocks(nextScheduleBlocks);
+
+    // Atomically sync to cloud
+    if (currentUser) {
+      cloudSyncService.saveState(currentUser.id, {
+        tasks: nextTasks,
+        dsaProblems: nextDSA,
+        collegeSubjects: nextCollege,
+        interviewTopics: nextInterview,
+        clients: nextClients,
+        outreachLeads: nextOutreach,
+        health: nextHealth,
+        scheduleBlocks: nextScheduleBlocks,
+        timeBlockEvents,
+        ratings,
+        googleCalendarUrl: storage.getGoogleCalendarUrl(),
+      });
     }
   };
 
@@ -557,6 +659,12 @@ export default function Home() {
 
     return Math.min(10.0, Math.max(5.0, Number(score.toFixed(1))));
   }, [dsaProblems, tasks, health, outreachLeads]);
+
+  // Today's Date String & Stored Rating
+  const todayRating = useMemo(() => {
+    if (!todayStr) return undefined;
+    return ratings.find((r) => r.date === todayStr);
+  }, [ratings, todayStr]);
 
   // Dynamic Sidebar Badges
   const badges = {
@@ -598,7 +706,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-neutral-400'}`} />
               <span className="text-xs font-semibold text-[#86868B] uppercase tracking-wider">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                {currentDateFormatted || 'Today'}
               </span>
               {currentUser && (
                 <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 text-[11px] font-medium text-emerald-700 border border-emerald-200">
@@ -621,6 +729,15 @@ export default function Home() {
           </div>
 
           <div className="hidden sm:flex items-center gap-2">
+            <button
+              onClick={() => setShowGoogleCalendarModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#1D1D1F] border border-black/[0.08] text-xs font-medium active:scale-95 transition-all shadow-xs"
+              title="Sync with Google Calendar via private .ics link"
+            >
+              <Calendar className="w-3.5 h-3.5 text-neutral-600" />
+              <span>Calendar</span>
+            </button>
+
             <button
               onClick={() => setShowAuthModal(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#1D1D1F] border border-black/[0.08] text-xs font-medium active:scale-95 transition-all shadow-xs"
@@ -653,8 +770,8 @@ export default function Home() {
               onClick={() => setShowQuickAdd(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 active:scale-95 transition-all shadow-xs"
             >
-              <CustomIcon name="wand" className="w-3.5 h-3.5" white />
-              <span>Capture Task</span>
+              <Plus className="w-3.5 h-3.5 text-white" />
+              <span>Add Task</span>
             </button>
           </div>
         </header>
@@ -664,6 +781,7 @@ export default function Home() {
           {activeTab === 'dashboard' && (
             <DashboardView
               score={dailyScore}
+              userName={currentUser?.email?.split('@')[0] || 'Prateek'}
               tasks={tasks}
               dsaProblems={dsaProblems}
               clients={clients}
@@ -671,9 +789,12 @@ export default function Home() {
               collegeSubjects={collegeSubjects}
               interviewTopics={interviewTopics}
               health={health}
+              todayRating={todayRating}
               onToggleTask={handleToggleTask}
               onSelectTab={setActiveTab}
               onOpenQuickAdd={() => setShowQuickAdd(true)}
+              onOpenDailyRating={() => setShowRatingModal(true)}
+              onOpenGoogleCalendar={() => setShowGoogleCalendarModal(true)}
             />
           )}
 
@@ -682,6 +803,7 @@ export default function Home() {
               blocks={scheduleBlocks}
               onToggleBlock={handleToggleScheduleBlock}
               onAddBlock={handleAddScheduleBlock}
+              onOpenGoogleCalendar={() => setShowGoogleCalendarModal(true)}
             />
           )}
 
@@ -743,10 +865,11 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Universal Quick Add Task Modal */}
+      {/* Fast Universal Quick Add Task Modal */}
       {showQuickAdd && (
         <QuickAddModal
           onAddTask={handleAddTask}
+          onAddDSA={handleAddDSA}
           onClose={() => setShowQuickAdd(false)}
         />
       )}
@@ -756,6 +879,21 @@ export default function Home() {
         isOpen={showAIPrompt}
         onClose={() => setShowAIPrompt(false)}
         onApplyParsedResult={handleApplyAIParsedResult}
+      />
+
+      {/* Daily End-of-Day Rating Modal */}
+      <DailyRatingModal
+        isOpen={showRatingModal}
+        onClose={() => setShowRatingModal(false)}
+        todayRating={todayRating}
+        onSaveRating={handleSaveRating}
+      />
+
+      {/* Google Calendar iCal Sync Modal */}
+      <GoogleCalendarModal
+        isOpen={showGoogleCalendarModal}
+        onClose={() => setShowGoogleCalendarModal(false)}
+        onEventsSynced={handleSyncGoogleCalendar}
       />
 
       {/* Supabase Multi-Device Auth & Sync Modal */}

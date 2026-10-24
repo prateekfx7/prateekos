@@ -8,6 +8,7 @@ import {
   LifeTask,
   ScheduleBlock,
   TimeBlockEvent,
+  DailyRating,
 } from '../types';
 
 // Clean Blank Slate — 0 Mock Data (Ready for real personal entries across PC, Mobile, and iPad)
@@ -122,6 +123,26 @@ export const storage = {
     if (typeof window !== 'undefined') localStorage.setItem('dsa_os_time_blocks', JSON.stringify(data));
   },
 
+  getRatings: (): DailyRating[] => {
+    if (typeof window === 'undefined') return [];
+    const d = localStorage.getItem('dsa_os_daily_ratings');
+    return d ? JSON.parse(d) : [];
+  },
+  saveRatings: (data: DailyRating[]) => {
+    if (typeof window !== 'undefined') localStorage.setItem('dsa_os_daily_ratings', JSON.stringify(data));
+  },
+
+  getGoogleCalendarUrl: (): string => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('dsa_os_gcal_ical_url') || '';
+  },
+  saveGoogleCalendarUrl: (url: string) => {
+    if (typeof window !== 'undefined') {
+      if (url && url.trim()) localStorage.setItem('dsa_os_gcal_ical_url', url.trim());
+      else localStorage.removeItem('dsa_os_gcal_ical_url');
+    }
+  },
+
   getApiKey: (): string => {
     if (typeof window === 'undefined') return '';
     return localStorage.getItem('dsa_os_gemini_api_key') || '';
@@ -141,6 +162,8 @@ export const storage = {
       localStorage.removeItem(KEYS.TASKS);
       localStorage.removeItem('dsa_os_schedule_blocks');
       localStorage.removeItem('dsa_os_time_blocks');
+      localStorage.removeItem('dsa_os_daily_ratings');
+      localStorage.removeItem('dsa_os_gcal_ical_url');
     }
   },
 };

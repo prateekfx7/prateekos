@@ -133,6 +133,31 @@ export interface LifeTask {
   done: boolean;
   dueTime?: string;
   createdAt: string;
+  completedAt?: string;
+}
+
+// Daily End-of-Day Rating & Reflection
+export interface DailyRating {
+  id: string;
+  date: string; // YYYY-MM-DD
+  score: number; // 1-10
+  focusLevel: 'Low' | 'Medium' | 'High' | 'Flow State';
+  note?: string;
+  wins?: string;
+  tags?: string[];
+  createdAt: string;
+}
+
+// Google Calendar iCal Event
+export interface GoogleCalendarEvent {
+  id: string;
+  title: string;
+  startTime: string; // e.g. "10:00 AM"
+  endTime?: string; // e.g. "11:30 AM"
+  date: string; // YYYY-MM-DD
+  description?: string;
+  location?: string;
+  isAllDay?: boolean;
 }
 
 // Auxiliary types for backward compatibility across modules

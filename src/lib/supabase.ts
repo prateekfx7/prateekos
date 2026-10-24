@@ -9,6 +9,7 @@ import {
   HealthMetrics,
   ScheduleBlock,
   TimeBlockEvent,
+  DailyRating,
 } from '../types';
 
 export interface UserSystemState {
@@ -21,6 +22,8 @@ export interface UserSystemState {
   health: HealthMetrics;
   scheduleBlocks: ScheduleBlock[];
   timeBlockEvents: TimeBlockEvent[];
+  ratings?: DailyRating[];
+  googleCalendarUrl?: string;
 }
 
 // Retrieve configured or custom Supabase credentials
@@ -188,6 +191,8 @@ export const cloudSyncService = {
         },
         scheduleBlocks: data.schedule_blocks || [],
         timeBlockEvents: data.time_block_events || [],
+        ratings: data.ratings || [],
+        googleCalendarUrl: data.google_calendar_url || '',
       };
     } catch (err) {
       console.error('Failed to load user state from Supabase:', err);
@@ -200,7 +205,7 @@ export const cloudSyncService = {
     if (!client || !userId) return false;
 
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         user_id: userId,
         tasks: state.tasks,
         dsa_problems: state.dsaProblems,
@@ -213,6 +218,13 @@ export const cloudSyncService = {
         time_block_events: state.timeBlockEvents,
         updated_at: new Date().toISOString(),
       };
+
+      if (state.ratings !== undefined) {
+        payload.ratings = state.ratings;
+      }
+      if (state.googleCalendarUrl !== undefined) {
+        payload.google_calendar_url = state.googleCalendarUrl;
+      }
 
       const { error } = await client
         .from('user_system_state')
