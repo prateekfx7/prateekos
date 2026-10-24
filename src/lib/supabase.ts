@@ -118,7 +118,12 @@ export const authService = {
   signUpWithEmail: async (email: string, password: string) => {
     const client = getSupabaseClient();
     if (!client) throw new Error('Supabase is not connected yet. Please enter your free Supabase URL & Anon Key.');
-    const { data, error } = await client.auth.signUp({ email, password });
+    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: redirectTo },
+    });
     if (error) throw error;
     return data;
   },

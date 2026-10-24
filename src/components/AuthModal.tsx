@@ -56,7 +56,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const cfg = getSupabaseConfig();
       setProjectUrl(cfg.url);
       setAnonKey(cfg.key);
-      setIsConfigured(isSupabaseConfigured());
+      const configured = isSupabaseConfigured();
+      setIsConfigured(configured);
+      if (!configured) {
+        setMode('config');
+      }
       setMessage(null);
     }
   }, [isOpen]);
@@ -87,21 +91,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (!password || password.length < 6) {
           throw new Error('Password must be at least 6 characters');
         }
-        await authService.signUpWithEmail(email.trim(), password);
-        setMessage({
-          text: 'Account created! Check your email to confirm or sign in directly.',
-          type: 'success',
-        });
+        const data = await authService.signUpWithEmail(email.trim(), password);
+        if (data?.session?.user) {
+          onUserChange(data.session.user);
+          setMessage({ text: 'Account created! Logged in successfully.', type: 'success' });
+          setTimeout(() => onClose(), 800);
+        } else {
+          setMessage({
+            text: 'Account created! If email confirmation is enabled in your Supabase project, check your email to confirm, or try signing in.',
+            type: 'success',
+          });
+        }
       } else {
         // Sign in with password or magic link
-        await authService.signInWithEmail(email.trim(), password ? password : undefined);
-        const user = await authService.getUser();
+        const res = await authService.signInWithEmail(email.trim(), password ? password : undefined);
+        const user = (res as any)?.user || (await authService.getUser());
         if (user) {
           onUserChange(user);
           setMessage({ text: 'Signed in successfully!', type: 'success' });
           setTimeout(() => onClose(), 800);
         } else {
-          setMessage({ text: 'Magic link sent to your email inbox!', type: 'success' });
+          setMessage({ text: 'Magic link sent to your email inbox! Check your email to sign in.', type: 'success' });
         }
       }
     } catch (err: any) {
@@ -367,14 +377,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Cloud Setup Form */}
               {mode === 'config' && (
                 <form onSubmit={handleSaveConfig} className="space-y-3 pt-1">
-                  <div className="p-3 rounded-xl bg-white/60 border border-white/80 text-[11px] text-neutral-700 space-y-1">
+                  <div className="p-3 rounded-xl bg-white/60 border border-white/80 text-[11px] text-neutral-700 space-y-1.5">
                     <p className="font-bold text-[#1D1D1F]">Where do I get these free keys?</p>
                     <ol className="list-decimal pl-4 space-y-0.5 text-[#86868B]">
-                      <li>Create free project at supabase.com (100% free)</li>
-                      <li>Go to <strong>Project Settings</strong> &gt; <strong>API</strong></li>
+                      <li>Create a free project at <strong>supabase.com</strong> (100% free forever)</li>
+                      <li>In Supabase, go to <strong>Project Settings</strong> &gt; <strong>API</strong></li>
                       <li>Copy <strong>Project URL</strong> and <strong>anon public key</strong></li>
                       <li>Paste below to enable instant multi-device syncing</li>
                     </ol>
+                    <div className="pt-1.5 border-t border-black/[0.05] text-[10px] text-neutral-600">
+                      <strong>Vercel Tip:</strong> Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to your Vercel Project Settings &gt; Environment Variables and redeploy so your mobile and iPad connect automatically without entering keys manually!
+                    </div>
                   </div>
 
                   <div>
