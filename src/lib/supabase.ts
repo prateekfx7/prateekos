@@ -24,6 +24,7 @@ export interface UserSystemState {
   timeBlockEvents: TimeBlockEvent[];
   ratings?: DailyRating[];
   googleCalendarUrl?: string;
+  lastResetDate?: string;
 }
 
 // Retrieve configured or custom Supabase credentials
@@ -193,6 +194,7 @@ export const cloudSyncService = {
         timeBlockEvents: data.time_block_events || [],
         ratings: data.ratings || [],
         googleCalendarUrl: data.google_calendar_url || '',
+        lastResetDate: data.last_reset_date || '',
       };
     } catch (err) {
       console.error('Failed to load user state from Supabase:', err);
@@ -224,6 +226,9 @@ export const cloudSyncService = {
       }
       if (state.googleCalendarUrl !== undefined) {
         payload.google_calendar_url = state.googleCalendarUrl;
+      }
+      if (state.lastResetDate !== undefined) {
+        payload.last_reset_date = state.lastResetDate;
       }
 
       const { error } = await client

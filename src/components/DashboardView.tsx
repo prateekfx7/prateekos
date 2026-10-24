@@ -25,6 +25,10 @@ import {
   ExternalLink,
   Calendar,
   Flame,
+  Sunrise,
+  RotateCcw,
+  History,
+  Archive,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Vaso } from 'vaso';
@@ -45,6 +49,7 @@ interface DashboardViewProps {
   onOpenQuickAdd: () => void;
   onOpenDailyRating: () => void;
   onOpenGoogleCalendar?: () => void;
+  onOpenDailyReset?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -63,7 +68,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenQuickAdd,
   onOpenDailyRating,
   onOpenGoogleCalendar,
+  onOpenDailyReset,
 }) => {
+  const [taskViewMode, setTaskViewMode] = useState<'active' | 'carried' | 'archived'>('active');
   const [taskFilter, setTaskFilter] = useState<'all' | 'must' | 'should' | 'later'>('all');
   const [chartRange, setChartRange] = useState<'7d' | '14d'>('7d');
 
@@ -71,12 +78,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const dsaTarget = 3;
   const mustTasks = tasks.filter((t) => t.priority === 'must');
   const activeClientsCount = clients.filter((c) => c.stage !== 'Completed').length;
-  const completedTasksCount = tasks.filter((t) => t.done).length;
 
-  const filteredTasks = tasks.filter((t) => {
-    if (taskFilter === 'all') return true;
-    return t.priority === taskFilter;
-  });
+  const activeTasks = useMemo(() => tasks.filter((t) => !t.archived), [tasks]);
+  const carriedOverTasks = useMemo(() => tasks.filter((t) => t.carriedOver && !t.done && !t.archived), [tasks]);
+  const archivedTasks = useMemo(() => tasks.filter((t) => t.archived), [tasks]);
+
+  const currentViewTasks = useMemo(() => {
+    if (taskViewMode === 'carried') return carriedOverTasks;
+    if (taskViewMode === 'archived') return archivedTasks;
+    return activeTasks;
+  }, [taskViewMode, activeTasks, carriedOverTasks, archivedTasks]);
+
+  const filteredTasks = useMemo(() => {
+    return currentViewTasks.filter((t) => {
+      if (taskFilter === 'all') return true;
+      return t.priority === taskFilter;
+    });
+  }, [currentViewTasks, taskFilter]);
+
+  const completedTodayCount = activeTasks.filter((t) => t.done).length;
 
   // Real Dynamic Productivity Bars (Computed from actual user activity, 0 fake mock data)
   const realBarData = useMemo(() => {
@@ -342,7 +362,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="flex items-center justify-between sm:justify-end gap-3 text-xs">
             <div className="flex items-center gap-2 text-[#86868B]">
-              <span>Completed Today: <strong className="text-[#1D1D1F] font-mono">{completedTasksCount}</strong></span>
+              <span>Completed Today: <strong className="text-[#1D1D1F] font-mono">{completedTodayCount}</strong></span>
             </div>
 
             <div className="flex items-center gap-1 p-0.5 rounded-xl bg-neutral-100 border border-black/[0.06]">
@@ -407,7 +427,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 5. UNIVERSAL TASKS & PRIORITIES (With Quick Add Task & Filter) */}
+      {/* 5. UNIVERSAL TASKS & PRIORITIES (With Daily Reset, Rollover, and History) */}
       <div className="apple-card p-6 bg-white border border-black/[0.06] space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
           <div className="flex items-center gap-2.5">
@@ -415,18 +435,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <CustomIcon name="wand" className="w-4 h-4" white />
             </div>
             <div>
-              <h3 className="text-lg font-serif font-bold text-[#1D1D1F]">
-                Today's Tasks & Execution List
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-serif font-bold text-[#1D1D1F]">
+                  {taskViewMode === 'archived'
+                    ? 'Archived Task History'
+                    : taskViewMode === 'carried'
+                    ? 'Leftover Rolled-Over Tasks'
+                    : "Today's Tasks & Execution List"}
+                </h3>
+                {carriedOverTasks.length > 0 && taskViewMode === 'active' && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                    {carriedOverTasks.length} Rolled Over
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-[#86868B]">
-                {completedTasksCount} of {tasks.length} tasks completed
+                {taskViewMode === 'archived'
+                  ? `${archivedTasks.length} tasks completed on previous days`
+                  : taskViewMode === 'carried'
+                  ? `${carriedOverTasks.length} unfinished tasks carried over from prior days`
+                  : `${completedTodayCount} of ${activeTasks.length} tasks completed today`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* View Mode Pills (Active Today / Rolled Over / History) */}
             <div className="flex items-center gap-1 p-0.5 rounded-xl bg-neutral-100 text-xs">
+              <button
+                onClick={() => setTaskViewMode('active')}
+                className={`px-2.5 py-1 rounded-lg text-xs transition-all ${
+                  taskViewMode === 'active'
+                    ? 'bg-white text-black font-bold shadow-xs'
+                    : 'text-[#86868B] hover:text-black'
+                }`}
+              >
+                Today ({activeTasks.length})
+              </button>
+
+              {carriedOverTasks.length > 0 && (
+                <button
+                  onClick={() => setTaskViewMode('carried')}
+                  className={`px-2 py-1 rounded-lg text-xs transition-all flex items-center gap-1 ${
+                    taskViewMode === 'carried'
+                      ? 'bg-amber-100 text-amber-900 font-bold shadow-xs'
+                      : 'text-amber-700 hover:text-amber-900'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span>Leftover ({carriedOverTasks.length})</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => setTaskViewMode('archived')}
+                className={`px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1 ${
+                  taskViewMode === 'archived'
+                    ? 'bg-white text-black font-bold shadow-xs'
+                    : 'text-[#86868B] hover:text-black'
+                }`}
+              >
+                <History className="w-3 h-3" />
+                <span>History ({archivedTasks.length})</span>
+              </button>
+            </div>
+
+            {/* Priority Filter Pills */}
+            <div className="hidden md:flex items-center gap-1 p-0.5 rounded-xl bg-neutral-100 text-xs">
               {(['all', 'must', 'should', 'later'] as const).map((f) => (
                 <button
                   key={f}
@@ -442,6 +517,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               ))}
             </div>
 
+            {/* Daily Reset Button */}
+            {onOpenDailyReset && (
+              <button
+                onClick={onOpenDailyReset}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 text-xs font-bold active:scale-95 transition-all shadow-xs"
+                title="Daily Reset: Roll over leftover tasks and archive completed ones"
+              >
+                <Sunrise className="w-3.5 h-3.5 text-amber-600" />
+                <span className="hidden sm:inline">Daily Reset</span>
+              </button>
+            )}
+
+            {/* Add Task Button */}
             <button
               onClick={onOpenQuickAdd}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 active:scale-95 transition-all shadow-xs"
@@ -456,14 +544,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="space-y-2">
           {filteredTasks.length === 0 ? (
             <div className="p-8 text-center bg-[#FAF9F5] rounded-2xl border border-black/[0.04] space-y-2">
-              <p className="text-xs font-medium text-[#86868B]">No tasks in this view.</p>
-              <button
-                onClick={onOpenQuickAdd}
-                className="inline-flex items-center gap-1 text-xs font-bold text-black hover:underline"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add your first task</span>
-              </button>
+              {taskViewMode === 'active' ? (
+                <>
+                  <Sunrise className="w-8 h-8 text-amber-500 mx-auto" />
+                  <p className="text-sm font-semibold text-[#1D1D1F]">Fresh day, clean slate!</p>
+                  <p className="text-xs text-[#86868B] max-w-sm mx-auto">
+                    No active tasks yet for today. Apply your daily tasks by clicking Add Task (or press N), or dump your thoughts with AI (CMD+K).
+                  </p>
+                  <button
+                    onClick={onOpenQuickAdd}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black text-white text-xs font-bold hover:bg-neutral-800 active:scale-95 transition-all shadow-xs mt-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Apply Today's Tasks</span>
+                  </button>
+                </>
+              ) : taskViewMode === 'carried' ? (
+                <>
+                  <p className="text-sm font-semibold text-[#1D1D1F]">No leftover tasks!</p>
+                  <p className="text-xs text-[#86868B]">Everything from prior days was completed or cleared.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-[#1D1D1F]">Archive History is empty.</p>
+                  <p className="text-xs text-[#86868B]">Completed tasks will be archived here when each new day resets.</p>
+                </>
+              )}
             </div>
           ) : (
             filteredTasks.map((task) => {
@@ -476,6 +582,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   className={`p-3 rounded-2xl border flex items-center justify-between gap-3 transition-all duration-150 ${
                     task.done
                       ? 'bg-neutral-50/70 border-neutral-200/50'
+                      : task.carriedOver
+                      ? 'bg-amber-50/30 border-amber-200/60 hover:border-amber-300 shadow-xs'
                       : 'bg-white border-black/[0.06] hover:border-black/20 shadow-xs'
                   }`}
                 >
@@ -503,6 +611,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         >
                           {task.title}
                         </span>
+
+                        {task.carriedOver && !task.done && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            Rolled Over
+                          </span>
+                        )}
+
+                        {task.archived && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-neutral-200/70 text-neutral-700">
+                            Archived
+                          </span>
+                        )}
 
                         <span
                           className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${

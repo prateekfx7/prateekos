@@ -37,9 +37,11 @@ import { AIPromptModal } from '../components/AIPromptModal';
 import { AuthModal } from '../components/AuthModal';
 import { DailyRatingModal } from '../components/DailyRatingModal';
 import { GoogleCalendarModal } from '../components/GoogleCalendarModal';
+import { DailyResetModal } from '../components/DailyResetModal';
+import { performDailyReset } from '../lib/dailyReset';
 import { CustomIcon } from '../components/CustomIcon';
 import { AIParsedResult } from '../types';
-import { Sparkles, Plus, Clock, Cloud, RefreshCw, Calendar } from 'lucide-react';
+import { Sparkles, Plus, Clock, Cloud, RefreshCw, Calendar, Sunrise, X } from 'lucide-react';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -60,6 +62,8 @@ export default function Home() {
   const [ratings, setRatings] = useState<DailyRating[]>([]);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showGoogleCalendarModal, setShowGoogleCalendarModal] = useState(false);
+  const [showDailyResetModal, setShowDailyResetModal] = useState(false);
+  const [rolloverNotice, setRolloverNotice] = useState<string | null>(null);
   const [gcalEvents, setGcalEvents] = useState<GoogleCalendarEvent[]>([]);
   const [todayStr, setTodayStr] = useState('');
   const [currentDateFormatted, setCurrentDateFormatted] = useState('');
@@ -73,22 +77,52 @@ export default function Home() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showAIPrompt, setShowAIPrompt] = useState(false);
 
-  // Initialize from storage
+  // Initialize from storage & evaluate automatic daily reset
   useEffect(() => {
-    setTasks(storage.getTasks());
+    let loadedTasks = storage.getTasks();
+    let loadedHealth = storage.getHealth();
+    let loadedSchedule = storage.getScheduleBlocks();
+
+    const storedLastReset = storage.getLastResetDate();
+    const now = new Date();
+    const todayDateStr = now.toISOString().split('T')[0];
+    setTodayStr(todayDateStr);
+    setCurrentDateFormatted(now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
+
+    // If day changed compared to last reset date, run daily reset & rollover:
+    // Leftover tasks carry over to today; completed tasks from yesterday are archived
+    if (storedLastReset && storedLastReset < todayDateStr) {
+      const resetResult = performDailyReset(loadedTasks, loadedHealth, loadedSchedule, todayDateStr);
+      loadedTasks = resetResult.updatedTasks;
+      loadedHealth = resetResult.resetHealth;
+      loadedSchedule = resetResult.updatedScheduleBlocks;
+
+      storage.saveTasks(loadedTasks);
+      storage.saveHealth(loadedHealth);
+      storage.saveScheduleBlocks(loadedSchedule);
+      storage.saveLastResetDate(todayDateStr);
+
+      if (resetResult.summary.carriedOverCount > 0) {
+        setRolloverNotice(
+          `☀️ Daily Reset Active: ${resetResult.summary.carriedOverCount} leftover task${
+            resetResult.summary.carriedOverCount > 1 ? 's' : ''
+          } rolled over from yesterday. Today's slate is fresh.`
+        );
+      }
+    } else if (!storedLastReset) {
+      storage.saveLastResetDate(todayDateStr);
+    }
+
+    setTasks(loadedTasks);
+    setHealth(loadedHealth);
+    setScheduleBlocks(loadedSchedule);
     setDSAProblems(storage.getDSA());
     setCollegeSubjects(storage.getCollege());
     setInterviewTopics(storage.getInterview());
     setClients(storage.getClients());
     setOutreachLeads(storage.getOutreach());
-    setHealth(storage.getHealth());
-    setScheduleBlocks(storage.getScheduleBlocks());
     setTimeBlockEvents(storage.getTimeBlockEvents());
     setRatings(storage.getRatings());
-
-    const now = new Date();
-    setTodayStr(now.toISOString().split('T')[0]);
-    setCurrentDateFormatted(now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
     setMounted(true);
   }, []);
 
@@ -209,6 +243,7 @@ export default function Home() {
       timeBlockEvents: partial.timeBlockEvents !== undefined ? partial.timeBlockEvents : timeBlockEvents,
       ratings: partial.ratings !== undefined ? partial.ratings : ratings,
       googleCalendarUrl: partial.googleCalendarUrl !== undefined ? partial.googleCalendarUrl : storage.getGoogleCalendarUrl(),
+      lastResetDate: partial.lastResetDate !== undefined ? partial.lastResetDate : storage.getLastResetDate(),
     };
     cloudSyncService.saveState(currentUser.id, fullState);
   };
@@ -240,6 +275,7 @@ export default function Home() {
         timeBlockEvents: [],
         ratings: [],
         googleCalendarUrl: '',
+        lastResetDate: '',
       });
     }
   };
@@ -313,6 +349,7 @@ export default function Home() {
             ...t,
             done: !t.done,
             completedAt: !t.done ? new Date().toISOString() : undefined,
+            archived: !t.done ? t.archived : false,
           }
         : t
     );
@@ -324,8 +361,52 @@ export default function Home() {
       ...newTask,
       id: `task-${Date.now()}`,
       createdAt: new Date().toISOString(),
+      archived: false,
     };
     updateTasks([created, ...tasks]);
+  };
+
+  // Handler for Daily Reset & Rollover
+  const handleTriggerDailyReset = () => {
+    const now = new Date();
+    const todayDateStr = now.toISOString().split('T')[0];
+    const result = performDailyReset(tasks, health, scheduleBlocks, todayDateStr);
+
+    setTasks(result.updatedTasks);
+    storage.saveTasks(result.updatedTasks);
+
+    setHealth(result.resetHealth);
+    storage.saveHealth(result.resetHealth);
+
+    setScheduleBlocks(result.updatedScheduleBlocks);
+    storage.saveScheduleBlocks(result.updatedScheduleBlocks);
+
+    storage.saveLastResetDate(todayDateStr);
+
+    if (currentUser) {
+      cloudSyncService.saveState(currentUser.id, {
+        tasks: result.updatedTasks,
+        dsaProblems,
+        collegeSubjects,
+        interviewTopics,
+        clients,
+        outreachLeads,
+        health: result.resetHealth,
+        scheduleBlocks: result.updatedScheduleBlocks,
+        timeBlockEvents,
+        ratings,
+        googleCalendarUrl: storage.getGoogleCalendarUrl(),
+        lastResetDate: todayDateStr,
+      });
+    }
+
+    setRolloverNotice(
+      `☀️ New day started! ${result.summary.carriedOverCount} leftover task${
+        result.summary.carriedOverCount !== 1 ? 's' : ''
+      } carried over. ${result.summary.archivedCount} completed task${
+        result.summary.archivedCount !== 1 ? 's' : ''
+      } archived.`
+    );
   };
 
   // Handlers for Daily Rating
@@ -730,6 +811,15 @@ export default function Home() {
 
           <div className="hidden sm:flex items-center gap-2">
             <button
+              onClick={() => setShowDailyResetModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/80 text-xs font-semibold active:scale-95 transition-all shadow-xs"
+              title="Daily Reset: Roll over leftover tasks and archive completed ones"
+            >
+              <Sunrise className="w-3.5 h-3.5 text-amber-600" />
+              <span>Daily Reset</span>
+            </button>
+
+            <button
               onClick={() => setShowGoogleCalendarModal(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/80 hover:bg-white text-[#1D1D1F] border border-black/[0.08] text-xs font-medium active:scale-95 transition-all shadow-xs"
               title="Sync with Google Calendar via private .ics link"
@@ -776,6 +866,22 @@ export default function Home() {
           </div>
         </header>
 
+        {/* Daily Rollover Notice Banner */}
+        {rolloverNotice && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50/90 to-orange-50/90 border border-amber-200/80 flex items-center justify-between gap-3 shadow-xs animate-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Sunrise className="w-4 h-4 text-amber-600 shrink-0" />
+              <p className="text-xs font-semibold text-amber-950 truncate">{rolloverNotice}</p>
+            </div>
+            <button
+              onClick={() => setRolloverNotice(null)}
+              className="text-amber-800 hover:text-black text-xs font-bold px-2 py-0.5 rounded-lg hover:bg-amber-100 shrink-0 transition-all"
+            >
+              Got it
+            </button>
+          </div>
+        )}
+
         {/* Tab Views with Fluid Spring Animation on Switch */}
         <div key={activeTab} className="apple-spring-in space-y-6">
           {activeTab === 'dashboard' && (
@@ -795,6 +901,7 @@ export default function Home() {
               onOpenQuickAdd={() => setShowQuickAdd(true)}
               onOpenDailyRating={() => setShowRatingModal(true)}
               onOpenGoogleCalendar={() => setShowGoogleCalendarModal(true)}
+              onOpenDailyReset={() => setShowDailyResetModal(true)}
             />
           )}
 
@@ -894,6 +1001,14 @@ export default function Home() {
         isOpen={showGoogleCalendarModal}
         onClose={() => setShowGoogleCalendarModal(false)}
         onEventsSynced={handleSyncGoogleCalendar}
+      />
+
+      {/* Daily Task Reset & Rollover Modal */}
+      <DailyResetModal
+        isOpen={showDailyResetModal}
+        onClose={() => setShowDailyResetModal(false)}
+        tasks={tasks}
+        onConfirmReset={handleTriggerDailyReset}
       />
 
       {/* Supabase Multi-Device Auth & Sync Modal */}

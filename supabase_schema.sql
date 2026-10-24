@@ -23,12 +23,14 @@ create table if not exists public.user_system_state (
   time_block_events jsonb default '[]'::jsonb,
   ratings jsonb default '[]'::jsonb,
   google_calendar_url text default '',
+  last_reset_date text default '',
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- Ensure columns exist if table was already created
 alter table public.user_system_state add column if not exists ratings jsonb default '[]'::jsonb;
 alter table public.user_system_state add column if not exists google_calendar_url text default '';
+alter table public.user_system_state add column if not exists last_reset_date text default '';
 
 -- 2. Enable Row Level Security (RLS) so your data is strictly private to your account
 alter table public.user_system_state enable row level security;

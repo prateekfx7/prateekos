@@ -143,6 +143,16 @@ export const storage = {
     }
   },
 
+  getLastResetDate: (): string => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('dsa_os_last_reset_date') || '';
+  },
+  saveLastResetDate: (dateStr: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dsa_os_last_reset_date', dateStr);
+    }
+  },
+
   getApiKey: (): string => {
     if (typeof window === 'undefined') return '';
     return localStorage.getItem('dsa_os_gemini_api_key') || '';
@@ -164,6 +174,7 @@ export const storage = {
       localStorage.removeItem('dsa_os_time_blocks');
       localStorage.removeItem('dsa_os_daily_ratings');
       localStorage.removeItem('dsa_os_gcal_ical_url');
+      localStorage.removeItem('dsa_os_last_reset_date');
     }
   },
 };

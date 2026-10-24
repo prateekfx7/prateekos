@@ -134,6 +134,9 @@ export interface LifeTask {
   dueTime?: string;
   createdAt: string;
   completedAt?: string;
+  carriedOver?: boolean; // True if rolled over from previous day
+  originalDate?: string; // YYYY-MM-DD of original creation
+  archived?: boolean; // True if completed on previous day and archived into history
 }
 
 // Daily End-of-Day Rating & Reflection
